@@ -60,6 +60,7 @@ tryCatch({
     
     conn <- dbConnect(drv, paste("jdbc:postgresql://", server, ":", port, "/", database.name, sep = ''), user.name, password)
     
+    # step 1: find users who installed the app
     query <- paste("create temp table installedusers as
     select mparticleuserid, min(eventtimestamp) as installtime
     from ", events.table, "
@@ -72,6 +73,7 @@ tryCatch({
     if (query.db(conn, "select count(*) from installedusers") == 0)
       stop("there're no installed users")
     
+    # step 2: find high valued users
     query <- paste("
       create temp table highvalueusers as
       select mparticleuserid, sum(eventltvvalue) as ltv
@@ -84,6 +86,7 @@ tryCatch({
     
     dbSendUpdate(conn, query)
     
+    # step 3: find medium valued users
     query <- paste("
     create temp table mediumvalueusers as
     select mparticleuserid, sum(eventltvvalue) as ltv
@@ -97,6 +100,7 @@ tryCatch({
     
     dbSendUpdate(conn, query)
     
+    # step 4: get distinct custom app event names, each of which will be used in user features
     query <- paste("select eventname
       from ", events.table, "
       join installedusers using(mparticleuserid)
@@ -110,6 +114,7 @@ tryCatch({
     event.names <- gsub("'", "\\\\\'", event.names)
     transformed.event.names <- tolower(sapply(event.names, gsub, pattern = "[^[:alnum:]]", replacement = ""))
     
+    # step 5: calculate user features
     query <- "
     create temp table userfeatures as
     select mparticleuserid,
@@ -136,6 +141,7 @@ tryCatch({
     
     dbSendUpdate(conn, query)
     
+    # step 6: format user data for modeling
     query <- "
     create temp table usersdata as
     select a.*, 
@@ -148,8 +154,10 @@ tryCatch({
     
     dbSendUpdate(conn, query)
     
+    # step 7: read data into memory
     data <- query.db(conn, "select * from usersdata", n = 10000)
     
+    # save modeling data into a file for future use
     save(list = c("data"), file = paste(app.name, ".install.to.engagement.data", sep = ''))
   } else {
     load(paste(app.name, ".install.to.engagement.data", sep = ''))
